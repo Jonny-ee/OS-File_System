@@ -7,11 +7,18 @@
 #define NUM_INODES 256 // 空闲inode号有256个
 #define NAME_LENGTH 252 // 名字长度
 #define DIRECT_PTR_COUNT 12 // 直接指针的个数
+#define ROOT 0
+#define IS_FILE true
+#define IS_DIRECTORY false
 
 #include <atomic>  // 原子操作
 #include <string>
 #include <vector>
 #include <bitset>
+#include <array>
+//json的文件
+#include "json.hpp"
+using json = nlohmann::json;
 
 // 文件类型（高位）
 constexpr uint16_t FILE_TYPE_MASK   = 0xF000; // 高4位掩码
@@ -53,8 +60,8 @@ public:
     int get_free_data_block() const;
     bool use_data_block();// 占用数据块，如果没有可用的数据块则返回false
     void release_data_block(); // 释放数据块
+    json save_super_block();
 };
-//static_assert(sizeof(Super_Block) == 20, "Super_Block size mismatch!");
 
 // 数据块和inode号正好都是256个，使用同一个类，占32B
 struct Bitmap {
@@ -65,6 +72,7 @@ public:
     bool use_bitmap(int i_id);// 将目标数据块置为1，如果已经是1则报错
     void release_bitmap(uint32_t i_id);// 释放该数据块
     [[nodiscard]] int find_free_bit() const;    //从2号开始遍历，找到空的序号，0和1为保留号和root
+    [[nodiscard]] std::string save_bitmap() const;
 };
 static_assert(sizeof(Bitmap) == 32, "Bitmap size mismatch!");
 
@@ -77,7 +85,7 @@ private:
     uint32_t uid;           // 所有者用户 ID
     uint64_t create_time;   // 创建时间
     uint64_t modification_time;                // 最后一次修改时间
-    uint32_t direct_ptrs[DIRECT_PTR_COUNT]{};  // 直接指针（最多12个）
+    std::array<int,12> direct_ptrs{};          // 直接指针（最多12个）
     uint32_t indirect_ptr;                     // 一级间接指针
     uint32_t double_indirect_ptr;              // 二级间接指针
     uint64_t padding[5]{};                     // 占位，未来拓展，放弃三级间接指针
@@ -89,7 +97,7 @@ public:
     [[nodiscard]] uint64_t get_create_time() const; // 获取创建时的时间，用于排序
     bool update_mode(std::string &m);// 更新权限
     void update_modification_time(); // 更新修改时间
-    void update_size(uint32_t &s); // 更新文件大小
+    void update_size(uint32_t &s,bool is_directory); // 更新文件大小
     [[nodiscard]] uint32_t get_size() const;// 获得当前文件大小
     void update_direct_ptr(int block_num); // 更新直接指针
     void update_indirect_ptr(int block_num); //更新一级间接指针
@@ -100,7 +108,9 @@ public:
     [[nodiscard]] bool get_type() const; // 获取该文件的类型
     [[nodiscard]] bool get_uid() const; //获取该文件的uid
     [[nodiscard]] uint16_t get_mode() const;
+    [[nodiscard]] std::string get_mode(bool be_string) const;
     void reset_ptr(int ptr_type,int pos=0);
+    json save_inode(); //保存inode节点，返回json文件
 };
 static_assert(sizeof(Inode) == INODE_SIZE, "Inode size mismatch!");
 
@@ -134,7 +144,7 @@ public:
     bool is_empty_of_index(); // 判断当前index块是否为空
     void add_index(uint32_t target_index); // 为索引块添加索引，当指针为0的时候，才可以写入
     uint32_t get_ptr_of_index(int num); //从index表中通过位置获取指针
-    uint32_t get_inode(char* target_name); // 如果数据块为目录块，则提供名字查inode的服务
+    uint32_t get_inode(const char* target_name); // 如果数据块为目录块，则提供名字查inode的服务
     uint32_t get_inode(uint32_t pos); // 或者通过位置来获取inode
     void delete_file(uint32_t pos); //删除指定位置的文件
     char* get_name(uint32_t pos); // 如果数据块为目录块，则提供查名服务
@@ -142,8 +152,9 @@ public:
     void init_index_block();// 初始化当前空闲块为索引块，将所有指针改为null
     void reset_block(); // 初始化该数据块
     bool has_name(const char* target_name);// 判断是否已经有同名文件
-    [[nodiscard]] std::string list_entries(); // 用于ls操作
+    [[nodiscard]] std::vector<std::string> list_entries(); // 用于ls操作
     char* get_block();
+    std::string save_data_block();
 };
 static_assert(sizeof(Data_Block) == 4096, "Data_Block size mismatch!");
 

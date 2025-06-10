@@ -2,6 +2,7 @@
 #define FILE_TERMINAL_H
 #include <sstream>
 #include <ncurses.h>
+#include <fstream>
 #include "file_manager.h"
 class File_Terminal {
 private:
@@ -21,8 +22,8 @@ public:
     void cat(const std::string& name); // 查看文件内容
     void vi(const std::string& name); // 查看创建文件
     void mkdir(const std::string& name); // 创建文件夹
-    void write_to_file(uint32_t new_file,const std::string& text);
-
+    uint32_t write_to_file(uint32_t new_file,const std::string& text);
+    void save_to_file();
 };
 
 

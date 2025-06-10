@@ -11,7 +11,7 @@ int main()
     std::cout<<"本系统通过模拟Linux的inode机制，旨在理解文件系统的底层管理原理，省略了部分复杂实现以突出核心概念。"<<std::endl;
     std::cout<<"本项目实现了："<<std::endl;
     std::cout<<"1. cd--用于改变当前工作目录"<<std::endl;
-    std::cout<<"2. ls--用于显示指定工作目录下之内容"<<std::endl;
+    std::cout<<"2. ls--用于显示指定工作目录下之内容，增加参数-m 可以显示更多内容"<<std::endl;
     std::cout<<"3. mkdir--用于在创建目录"<<std::endl;
     std::cout<<"4. rm--用于删除目录或文件"<<std::endl;
     std::cout<<"5. cat--用于查看文件内容"<<std::endl;

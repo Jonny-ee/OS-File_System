@@ -21,7 +21,12 @@ void File_Terminal::command() {
             parameter.erase(0,1);
         
         if(cmd=="ls") // 子文件list
-            fm.list_directory(inode);
+        {
+            if(parameter == "-m")
+                fm.list_directory(inode,true);
+            else
+                fm.list_directory(inode,false);
+        }
         else if(cmd=="cd") // 切换目录,..可以切换上一级
             cd(parameter);
         else if(cmd=="mkdir")// 创建目录,先检查有没有同类型同名
@@ -32,8 +37,10 @@ void File_Terminal::command() {
             cat(parameter);
         else if(cmd=="vi") // 编辑文件，如果没有该文件就创建
            vi(parameter);
-        else if(cmd=="exit")
+        else if(cmd=="exit") {
+            save_to_file();
             break;
+        }
     }
 }
 
@@ -46,20 +53,20 @@ void File_Terminal::cd(const std::string& name) {
     }
     if(name.empty())
         return;
-    auto target =fm.find_inode(inode,name.c_str(),DIRECTORY);
+    auto target =fm.find_inode(inode,name.c_str(),IS_DIRECTORY);
     if(target != inode) {
         inode=target;
         path_inode.emplace_back(inode);
         path_name.emplace_back(name+"\\");
     }
 }
-void File_Terminal::write_to_file(uint32_t new_file,const std::string& text) {
+uint32_t File_Terminal::write_to_file(uint32_t new_file,const std::string& text) {
     return fm.write_file(new_file,text);
 }
 void File_Terminal::cat(const std::string& name) {
     if(name.empty())
         return ;
-    auto target =fm.find_inode(inode,name.c_str(),FILE);
+    auto target =fm.find_inode(inode,name.c_str(),IS_FILE);
     if(target != inode) {
         std::cout<<fm.open_file(target)<<std::endl;
     }
@@ -70,7 +77,7 @@ void File_Terminal::vi(const std::string& name) {
         return;
     }
 
-    auto target = fm.find_inode(inode, name.c_str(), FILE);
+    auto target = fm.find_inode(inode, name.c_str(), IS_FILE);
     std::string text;
     
     // 如果没找到目标文件，就创建新的
@@ -78,9 +85,12 @@ void File_Terminal::vi(const std::string& name) {
         std::cout << "创建新文件: " << name << std::endl;
         std::cout << "请输入文件内容 (输入完成后按Enter):" << std::endl;
         std::getline(std::cin, text);
-        auto new_file = fm.create_new(inode, 1, name.c_str(), FILE);
+        auto new_file = fm.create_new(inode, 1, name.c_str(), IS_FILE);
         if(new_file != inode) {
-            write_to_file(new_file, text);
+            auto size=write_to_file(new_file, text);
+            for(int i=0;i<path_inode.size();i++) {
+                fm.update_directory_size(path_inode[i],size);
+            }
             std::cout << "文件创建成功" << std::endl;
         } else {
             std::cout << "错误：无法创建文件" << std::endl;
@@ -136,7 +146,7 @@ void File_Terminal::vi(const std::string& name) {
             }
             
             if (in_command_mode) {
-                mvprintw(LINES - 1, 0, ":%s", command_buffer.c_str());
+                mvprintw(LINES - 1, 0, "Enter q or wq:%s", command_buffer.c_str());
             }
             
             move(row + 10, col);
@@ -215,7 +225,10 @@ void File_Terminal::vi(const std::string& name) {
             for (const auto& line : lines) {
                 text += line + '\n';
             }
-            write_to_file(target, text);
+            auto size=write_to_file(target, text);
+            for(int i=0;i<path_inode.size();i++) {
+                fm.update_directory_size(path_inode[i],size);
+            }
             std::cout << "文件已保存" << std::endl;
         } else {
             std::cout << "已放弃修改" << std::endl;
@@ -224,9 +237,21 @@ void File_Terminal::vi(const std::string& name) {
 
 }
 void File_Terminal::mkdir(const std::string& name) {
-    auto target =fm.find_inode(inode,name.c_str(),DIRECTORY);
+    auto target =fm.find_inode(inode,name.c_str(),IS_DIRECTORY);
     if(target==inode)
-        fm.create_new(inode,1,name.c_str(),DIRECTORY);
+        fm.create_new(inode,1,name.c_str(),IS_DIRECTORY);
     else
         std::cout<<"exsist such file or directory"<<std::endl;
+}
+void File_Terminal::save_to_file() {
+    auto data = fm.save_data();
+    const char* homeDir = getenv("HOME");  // 获取主目录路径
+    std::string filePath = std::string(homeDir) + "/filesystem.json";
+    std::ofstream file(filePath);  // 自定义路径
+    if (!file) {
+        std::cerr << "文件创建失败！" << std::endl;
+        return;
+    }
+    file << data.dump(4);
+    file.close();
 }

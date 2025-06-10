@@ -31,7 +31,10 @@ int Super_Block::get_free_data_block() const {
 int Super_Block::get_free_inode() const {
     return free_inode.load();
 }
-
+json Super_Block::save_super_block() {
+    return{{"num_inode_table",num_inode_table},{"num_block",num_block},
+        {"free_inode",free_inode.load()},{"free_data_block",free_data_block.load()}};
+}
 Bitmap::Bitmap() {
     bit_map.reset();
 }
@@ -53,14 +56,15 @@ void Bitmap::release_bitmap(uint32_t i_id) {
     }
     return -1;
 }
+[[nodiscard]] std::string Bitmap::save_bitmap() const {
+    return bit_map.to_string();
+}
 Inode::Inode() {
     mode = 0;
     size = 0;
     uid  = 0;
     create_time = 0;
     modification_time=0;
-    for (uint32_t & d_ptr : direct_ptrs)
-        d_ptr = 0;
     indirect_ptr = double_indirect_ptr = 0;
 }
 void Inode::initial_inode(u_int32_t u,bool is_file) {
@@ -129,8 +133,11 @@ void Inode::update_modification_time() {
         std::chrono::system_clock::now().time_since_epoch()
     ).count();
 }
-void Inode::update_size(uint32_t &s) {
-    size = s;
+void Inode::update_size(uint32_t &s,bool is_file) {
+    if(is_file)
+        size = s;
+    else
+        size +=s;;
     update_modification_time();
 }
 [[nodiscard]] uint32_t Inode::get_size() const {
@@ -138,9 +145,9 @@ void Inode::update_size(uint32_t &s) {
 }
 
 void Inode::update_direct_ptr(int block_num) {
-    for(unsigned int & direct_ptr : direct_ptrs) {
-        if(direct_ptr == 0) {
-            direct_ptr = block_num;
+    for(int i = 0; i < DIRECT_PTR_COUNT; i++) {
+        if(direct_ptrs[i] == 0) {
+            direct_ptrs[i] = block_num;
             return;
         }
     }
@@ -186,6 +193,37 @@ void Inode::update_double_indirect_ptr(int block_num) {
 [[nodiscard]] uint16_t Inode::get_mode() const {
     return mode;
 }
+[[nodiscard]] std::string Inode::get_mode(bool be_string) const {
+    // 提取低12位
+    uint16_t low12 = mode & 0xFFF;
+
+    // 生成9位权限字符串
+    std::string result(9, '-');
+
+    // 用户权限
+    result[0] = (low12 & PERM_USER_READ)   ? 'r' : '-';
+    result[1] = (low12 & PERM_USER_WRITE)  ? 'w' : '-';
+    result[2] = (low12 & PERM_USER_EXEC)   ? 'x' : '-';
+
+    // 组权限
+    result[3] = (low12 & PERM_GROUP_READ)  ? 'r' : '-';
+    result[4] = (low12 & PERM_GROUP_WRITE) ? 'w' : '-';
+    result[5] = (low12 & PERM_GROUP_EXEC)  ? 'x' : '-';
+
+    // 其他权限
+    result[6] = (low12 & PERM_OTH_READ)    ? 'r' : '-';
+    result[7] = (low12 & PERM_OTH_WRITE)   ? 'w' : '-';
+    result[8] = (low12 & PERM_OTH_EXEC)    ? 'x' : '-';
+
+    return result;
+}
+
+json Inode::save_inode() {
+    return {{"mode", mode}, {"size", size}, {"uid", uid},
+        {"create_time",create_time},{"modification_time",modification_time},
+        {"direct_ptrs",direct_ptrs},{"indirect_ptr",indirect_ptr},
+        {"double_indirect_ptr",double_indirect_ptr}};
+}
 void Directory_Entry::init_dir(uint32_t i,const char* n) {
     inode = i;
     strcpy(name, n);
@@ -221,7 +259,7 @@ void Data_Block::add_index(uint32_t target_index) {
         }
     }
 }
-uint32_t Data_Block::get_inode(char* target_name) {
+uint32_t Data_Block::get_inode(const char* target_name) {
     for (int i = 0; i < BLOCK_SIZE; i += sizeof(Directory_Entry)) {
         auto* entry = reinterpret_cast<Directory_Entry*>(block + i);
         if (entry->get_inode() == 0)
@@ -268,13 +306,13 @@ bool Data_Block::has_name(const char* target_name) {
     }
     return false;
 }
-[[nodiscard]] std::string Data_Block::list_entries() {
-    std::string result;
+// 返回名字数组
+[[nodiscard]] std::vector<std::string> Data_Block::list_entries() {
+    std::vector<std::string> result;
     for (int i = 0; i < BLOCK_SIZE; i += sizeof(Directory_Entry)) {
         auto* entry = reinterpret_cast<Directory_Entry*>(block + i);
         if (entry->get_inode() != 0) {
-            result += entry->get_name();
-            result += " ";  // 添加空格分隔
+            result.emplace_back( entry->get_name());
         }
     }
     return result;
@@ -317,4 +355,8 @@ bool Data_Block::is_empty_of_index() {
 uint32_t Data_Block::get_ptr_of_index(int num) {
     auto entry = reinterpret_cast<uint32_t*>(block+sizeof(uint32_t)*num);
     return *entry;
+}
+
+std::string Data_Block::save_data_block(){
+   return {block};
 }

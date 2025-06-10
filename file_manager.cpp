@@ -1,12 +1,12 @@
 #include "file_manager.h"
 File_Manager::File_Manager() {
     inode_bitmap.use_bitmap(ROOT);// 初始时将0号和1号置为占用，0号inode为root
-    inode_table[ROOT].initial_inode(ROOT,DIRECTORY); // 创建root的inode，0号用户为管理员，false表示为文件夹
+    inode_table[ROOT].initial_inode(ROOT,IS_DIRECTORY); // 创建root的inode，0号用户为管理员，false表示为文件夹
     block_bitmap.use_bitmap(ROOT); // 将0号数据块给root使用
     data_blocks[ROOT].init_directory_block(); //将0号数据块初始化成目录项
     inode_table[ROOT].update_direct_ptr(ROOT); // 将0号数据块与0号inode绑定
-    create_new(ROOT,ROOT,"usr",DIRECTORY); // 创建初始的系统文件夹 usr
-    create_new(ROOT,ROOT,"sys",DIRECTORY); // 创建初始的系统文件夹 sys
+    create_new(ROOT,ROOT,"usr",IS_DIRECTORY); // 创建初始的系统文件夹 usr
+    create_new(ROOT,ROOT,"sys",IS_DIRECTORY); // 创建初始的系统文件夹 sys
 }
 
 void File_Manager::init_file_manager() {
@@ -19,12 +19,12 @@ void File_Manager::init_file_manager() {
     sb.init_sb();
 
     inode_bitmap.use_bitmap(ROOT);// 初始时将0号和1号置为占用，0号inode为root
-    inode_table[ROOT].initial_inode(ROOT,DIRECTORY); // 创建root的inode，0号用户为管理员，false表示为文件夹
+    inode_table[ROOT].initial_inode(ROOT,IS_DIRECTORY); // 创建root的inode，0号用户为管理员，false表示为文件夹
     block_bitmap.use_bitmap(ROOT); // 将0号数据块给root使用
     data_blocks[ROOT].init_directory_block(); //将0号数据块初始化成目录项
     inode_table[ROOT].update_direct_ptr(ROOT); // 将0号数据块与0号inode绑定
-    create_new(ROOT,ROOT,"usr",DIRECTORY); // 创建初始的系统文件夹 usr
-    create_new(ROOT,ROOT,"sys",DIRECTORY); // 创建初始的系统文件夹 sys
+    create_new(ROOT,ROOT,"usr",IS_DIRECTORY); // 创建初始的系统文件夹 usr
+    create_new(ROOT,ROOT,"sys",IS_DIRECTORY); // 创建初始的系统文件夹 sys
 }
 
 uint32_t File_Manager::create_new(uint32_t parent_inode,u_int32_t u,const char* n,bool type){
@@ -40,7 +40,7 @@ uint32_t File_Manager::create_new(uint32_t parent_inode,u_int32_t u,const char* 
     if(block==-1)
         return parent_inode;
     block_bitmap.use_bitmap(block);// 分配block
-    if(type==DIRECTORY)
+    if(type==IS_DIRECTORY)
         data_blocks[block].init_directory_block(); // 将该block设置为目录项block,如果不是文件夹就不用初始化
 
     // 将空闲块与新文件夹的inode绑定
@@ -236,14 +236,30 @@ void File_Manager::fm_delete(uint32_t parent_inode, const char* n) {
     }
 }
 
-void File_Manager::list_directory(uint32_t parent_inode) {
+void File_Manager::list_directory(uint32_t parent_inode,bool show_more) {
     std :: string res;
     // 直接指针
     for(int i = 0; i < DIRECT_PTR_COUNT; i++) {
         auto blk = inode_table[parent_inode].get_direct_ptr(i);
         if(blk == 0)
             continue;
-        res+=data_blocks[blk].list_entries();
+        auto name=data_blocks[blk].list_entries();
+        while(show_more && !name.empty()) {
+            auto inode = data_blocks[blk].get_inode(name.back().c_str());
+            std::string more_info;
+            more_info += name.back()+":"+'\n';
+            more_info += "  创建时间："+inode_table[inode].get_time("create")+'\n';
+            more_info += "  修改时间："+inode_table[inode].get_time("modify")+'\n';
+            more_info += "  文件大小："+std::to_string(inode_table[inode].get_size()) +"B"+'\n';
+            more_info += "  文件权限："+inode_table[inode].get_mode(true)+'\n';
+            name.pop_back();
+            res+=more_info;
+        }
+        while(!show_more && !name.empty()) {
+            res+=name.back()+" ";
+            name.pop_back();
+        }
+
     }
     // 处理一级间接指针
     auto ind = inode_table[parent_inode].get_indirect_ptr();
@@ -252,7 +268,22 @@ void File_Manager::list_directory(uint32_t parent_inode) {
             auto blk = data_blocks[ind].get_ptr_of_index(i);
             if(blk == 0)
                 continue;
-            res+=data_blocks[blk].list_entries();
+            auto name=data_blocks[blk].list_entries();
+            while(show_more && !name.empty()) {
+                auto inode = data_blocks[blk].get_inode(name.back().c_str());
+                std::string more_info;
+                more_info += name.back()+":"+'\n';
+                more_info += "  创建时间："+inode_table[inode].get_time("create")+'\n';
+                more_info += "  修改时间："+inode_table[inode].get_time("create")+'\n';
+                more_info += "  文件大小："+std::to_string(inode_table[inode].get_size()) +"B"+'\n';
+                more_info += "  文件权限："+inode_table[inode].get_mode(true)+'\n';
+                name.pop_back();
+                res+=more_info;
+            }
+            if(!show_more && !name.empty()) {
+                res+=name.back()+" ";
+                name.pop_back();
+            }
         }
     }
     // 处理二级间接指针
@@ -265,7 +296,22 @@ void File_Manager::list_directory(uint32_t parent_inode) {
                     auto blk = data_blocks[ind2].get_ptr_of_index(j);
                     if(blk == 0)
                         continue;
-                    res+=data_blocks[blk].list_entries();
+                    auto name=data_blocks[blk].list_entries();
+                    while(show_more && !name.empty()) {
+                        auto inode = data_blocks[blk].get_inode(name.back().c_str());
+                        std::string more_info;
+                        more_info += name.back()+":"+'\n';
+                        more_info += "  创建时间："+inode_table[inode].get_time("create")+'\n';
+                        more_info += "  修改时间："+inode_table[inode].get_time("create")+'\n';
+                        more_info += "  文件大小："+std::to_string(inode_table[inode].get_size()) +"B"+'\n';
+                        more_info += "  文件权限："+inode_table[inode].get_mode(true)+'\n';
+                        name.pop_back();
+                        res+=more_info;
+                    }
+                    if(!show_more && !name.empty()) {
+                        res+=name.back()+" ";
+                        name.pop_back();
+                    }
                 }
             }
         }
@@ -367,19 +413,19 @@ uint32_t File_Manager::find_inode(uint32_t parent_inode,const char* n,bool type)
     return parent_inode;
 }
 
-void File_Manager::write_file(uint32_t inode_id,const std::string& content) {
+uint32_t File_Manager::write_file(uint32_t inode_id,const std::string& content) {
     // 检查是否是文件
     if(!inode_table[inode_id].get_type()) {
         std::cout << "错误：不能向目录写入内容" << std::endl;
-        return;
+        return 0;
     }
     if(!(inode_table[inode_id].get_mode()&PERM_USER_WRITE)) {
         std::cout << "错误：没有写入权限" << std::endl;
-        return;
+        return 0;
     }
     if(!(inode_table[inode_id].get_mode()&PERM_USER_READ)) {
         std::cout << "错误：没有读取权限" << std::endl;
-        return;
+        return 0;
     }
 
 
@@ -397,7 +443,7 @@ void File_Manager::write_file(uint32_t inode_id,const std::string& content) {
         auto block = block_bitmap.find_free_bit();
         if(block == -1) {
             std::cout << "错误：没有足够的空间" << std::endl;
-            return;
+            return 0;
         }
         block_bitmap.use_bitmap(block);
 
@@ -418,7 +464,7 @@ void File_Manager::write_file(uint32_t inode_id,const std::string& content) {
                 auto index_block = block_bitmap.find_free_bit();
                 if(index_block == -1) {
                     std::cout << "错误：没有足够的空间" << std::endl;
-                    return;
+                    return 0;
                 }
                 block_bitmap.use_bitmap(index_block);
                 data_blocks[index_block].init_index_block();
@@ -433,7 +479,7 @@ void File_Manager::write_file(uint32_t inode_id,const std::string& content) {
                 auto index_block = block_bitmap.find_free_bit();
                 if(index_block == -1) {
                     std::cout << "错误：没有足够的空间" << std::endl;
-                    return;
+                    return 0;
                 }
                 block_bitmap.use_bitmap(index_block);
                 data_blocks[index_block].init_index_block();
@@ -449,7 +495,7 @@ void File_Manager::write_file(uint32_t inode_id,const std::string& content) {
                 auto new_index_block = block_bitmap.find_free_bit();
                 if(new_index_block == -1) {
                     std::cout << "错误：没有足够的空间" << std::endl;
-                    return;
+                    return 0;
                 }
                 block_bitmap.use_bitmap(new_index_block);
                 data_blocks[new_index_block].init_index_block();
@@ -466,9 +512,27 @@ void File_Manager::write_file(uint32_t inode_id,const std::string& content) {
 
     // 更新inode的大小和修改时间
     uint32_t size = content_size;
-    inode_table[inode_id].update_size(size);
+    inode_table[inode_id].update_size(size,IS_FILE);
+    return size;
 }
 
 uint32_t File_Manager::get_file_size(uint32_t inode_id) {
     return inode_table[inode_id].get_size();
+}
+json File_Manager::save_data() {
+    json data;
+    data["super_block"] = sb.save_super_block();
+    data["block_bitmap"] = block_bitmap.save_bitmap();
+    data["inode_bitmap"] = inode_bitmap.save_bitmap();
+    for(int i = 0; i < NUM_INODES; i++) {
+        auto inode_index= "inode_" + std::to_string(i);
+        data[inode_index] = inode_table[i].save_inode();
+        auto block_index = "block_"+std::to_string(i);
+        data[block_index]=data_blocks[i].save_data_block();
+    }
+    return data;
+}
+
+void File_Manager::update_directory_size(uint32_t inode_id,uint32_t new_size) {
+    inode_table[inode_id].update_size(new_size,IS_DIRECTORY);
 }
