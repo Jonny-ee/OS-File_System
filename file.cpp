@@ -1,5 +1,13 @@
 #include "file.h"
 
+Super_Block::Super_Block(const json &j) {
+    num_inode_table = NUM_INODES;//8个表来存储inode，一个表可以写入32个inode，8个表则一共可以写入256条
+    num_block = NUM_BLOCKS; //数据块一共256个
+    free_inode = j["free_inode"]; //初始时，空闲inode号有256个
+    free_data_block = j["free_data_block"]; //初始时，空闲数据块有256个
+    inode_table_size = INODE_SIZE; //一个inode占128B
+    data_block_size = BLOCK_SIZE; //数据块4KB
+}
 Super_Block::Super_Block() {
     num_inode_table = NUM_INODES;//8个表来存储inode，一个表可以写入32个inode，8个表则一共可以写入256条
     num_block = NUM_BLOCKS; //数据块一共256个
@@ -32,8 +40,11 @@ int Super_Block::get_free_inode() const {
     return free_inode.load();
 }
 json Super_Block::save_super_block() {
-    return{{"num_inode_table",num_inode_table},{"num_block",num_block},
-        {"free_inode",free_inode.load()},{"free_data_block",free_data_block.load()}};
+    return{{"free_inode",free_inode.load()},{"free_data_block",free_data_block.load()}};
+}
+Bitmap::Bitmap(const json &j,const std::string& n) {
+    std::string bit = j[n];
+    bit_map = std::bitset<NUM_BLOCKS>(bit);
 }
 Bitmap::Bitmap() {
     bit_map.reset();
@@ -59,13 +70,32 @@ void Bitmap::release_bitmap(uint32_t i_id) {
 [[nodiscard]] std::string Bitmap::save_bitmap() const {
     return bit_map.to_string();
 }
+void Bitmap::reset_bitmap() {
+    bit_map.reset();
+}
+Inode::Inode(const json& j) {
+    mode = j["mode"];
+    size = j["size"];
+    uid  = j["uid"];
+    create_time = j["create_time"];
+    modification_time= j["modification_time"];
+    indirect_ptr = j["indirect_ptr"];
+    double_indirect_ptr = j["double_indirect_ptr"];
+    for(int i=0;i<DIRECT_PTR_COUNT;i++) {
+        direct_ptrs[i]=j["direct_ptrs"][i];
+    }
+}
 Inode::Inode() {
     mode = 0;
     size = 0;
     uid  = 0;
     create_time = 0;
-    modification_time=0;
-    indirect_ptr = double_indirect_ptr = 0;
+    modification_time= 0;
+    indirect_ptr = 0;
+    double_indirect_ptr = 0;
+    for(int i=0;i<DIRECT_PTR_COUNT;i++) {
+        direct_ptrs[i]=0;
+    }
 }
 void Inode::initial_inode(u_int32_t u,bool is_file) {
     uid = u;
@@ -164,6 +194,7 @@ void Inode::reset_ptr(int ptr_type,int pos) {
             double_indirect_ptr = 0;
             break;
         default:
+            break;
     }
 }
 void Inode::update_indirect_ptr(int block_num) {
@@ -217,7 +248,16 @@ void Inode::update_double_indirect_ptr(int block_num) {
 
     return result;
 }
-
+void Inode::reset_inode() {
+    mode=0;
+    size=0;
+    uid=0;
+    create_time=0;
+    modification_time=0;
+    direct_ptrs={};
+    indirect_ptr=0;
+    double_indirect_ptr=0;
+}
 json Inode::save_inode() {
     return {{"mode", mode}, {"size", size}, {"uid", uid},
         {"create_time",create_time},{"modification_time",modification_time},
@@ -240,7 +280,26 @@ void Directory_Entry::delete_file() {
 void Directory_Entry::update_name(char* n) {
     strcpy(name, n);
 }
+Data_Block::Data_Block(const json &j,int pos){
+    std::string key = "block_" + std::to_string(pos);
+    std::string encoded = j[key].get<std::string>();
 
+    // 解码Base64字符串
+    std::string decoded = base64_decode(encoded);
+
+    // 验证解码后长度是否正确
+    if (decoded.length() != 4096) {
+        // 处理错误：数据长度不匹配
+        std::memset(block, 0, 4096);  // 初始化为全0
+        return;
+    }
+
+    // 复制解码后的数据到block数组
+    std::memcpy(block, decoded.data(), 4096);
+}
+Data_Block::Data_Block() {
+    strcpy(block,"");
+}
 void Data_Block::add_dir(uint32_t target_inode, const char* target_name) {
     for (int i = 0; i < BLOCK_SIZE; i += sizeof(Directory_Entry)) {
         auto* entry = reinterpret_cast<Directory_Entry*>(block + i);
@@ -358,5 +417,6 @@ uint32_t Data_Block::get_ptr_of_index(int num) {
 }
 
 std::string Data_Block::save_data_block(){
-   return {block};
+    std::string str(block, 4096);
+    return base64_encode(str, true);
 }

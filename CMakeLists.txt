@@ -11,6 +11,8 @@ add_executable(Project3 main.cpp
         file_terminal.cpp
         file_terminal.h
         json.hpp
+        base64.h
+        base64.cpp
 )
 
 find_package(Curses REQUIRED)

@@ -1,10 +1,6 @@
 #include "file_terminal.h"
-
 #include <__filesystem/path.h>
-
 #include <utility>
-
-
 void File_Terminal::command() {
 
     while(true) {
@@ -36,7 +32,9 @@ void File_Terminal::command() {
         else if(cmd=="cat") // 查看文件内容
             cat(parameter);
         else if(cmd=="vi") // 编辑文件，如果没有该文件就创建
-           vi(parameter);
+            vi(parameter);
+        else if(cmd=="reset") // 格式化该系统
+            fm.init_file_manager();
         else if(cmd=="exit") {
             save_to_file();
             break;
@@ -254,4 +252,25 @@ void File_Terminal::save_to_file() {
     }
     file << data.dump(4);
     file.close();
+}
+
+void File_Terminal::load_from_file() {
+    std::ifstream file("filesystem.json");
+    json data;
+    try {
+        file >> data;
+        fm.load_data(data,true);
+    } catch (const std::exception& e) {
+        std::cerr << "无目标文件，正在初始化系统" << e.what() << std::endl;
+        fm.load_data(data,false);
+    }
+    file.close();
+}
+
+File_Terminal::File_Terminal() {
+    load_from_file();  // 在构造函数中加载数据
+    inode = ROOT;
+    path_name.push_back("/");
+    path_inode.push_back(ROOT);
+    command();
 }

@@ -16,6 +16,7 @@
 #include <vector>
 #include <bitset>
 #include <array>
+#include "base64.h"
 //json的文件
 #include "json.hpp"
 using json = nlohmann::json;
@@ -54,6 +55,7 @@ private:
     int inode_table_size;
     int data_block_size;
 public:
+    explicit Super_Block(const json &j);
     Super_Block();
     void init_sb();
     int get_free_inode() const;
@@ -68,11 +70,13 @@ struct Bitmap {
 private:
     std::bitset<NUM_BLOCKS> bit_map;
 public:
-    Bitmap();
+    explicit Bitmap(const json &j,const std::string& n);
+    explicit Bitmap();
     bool use_bitmap(int i_id);// 将目标数据块置为1，如果已经是1则报错
     void release_bitmap(uint32_t i_id);// 释放该数据块
     [[nodiscard]] int find_free_bit() const;    //从2号开始遍历，找到空的序号，0和1为保留号和root
     [[nodiscard]] std::string save_bitmap() const;
+    void reset_bitmap();
 };
 static_assert(sizeof(Bitmap) == 32, "Bitmap size mismatch!");
 
@@ -91,7 +95,8 @@ private:
     uint64_t padding[5]{};                     // 占位，未来拓展，放弃三级间接指针
 
 public:
-    Inode();
+    explicit Inode(const json& j);
+    explicit Inode();
     void initial_inode(u_int32_t u,bool is_file); // 创建文件时，只用所有者id，并且自动获得当前时间和默认文件权限
     [[nodiscard]] std::string get_time(const std::string& type) const;// 返回年月日时分秒的string，格式为 "2014-12-01 14:12:60"，可以选择创建时间或者修改时间
     [[nodiscard]] uint64_t get_create_time() const; // 获取创建时的时间，用于排序
@@ -110,6 +115,7 @@ public:
     [[nodiscard]] uint16_t get_mode() const;
     [[nodiscard]] std::string get_mode(bool be_string) const;
     void reset_ptr(int ptr_type,int pos=0);
+    void reset_inode();
     json save_inode(); //保存inode节点，返回json文件
 };
 static_assert(sizeof(Inode) == INODE_SIZE, "Inode size mismatch!");
@@ -121,7 +127,7 @@ private:
     uint32_t inode=0;      // inode号
     char name[NAME_LENGTH]{};  // 文件名最大长度
 public:
-    Directory_Entry() = default;
+    explicit Directory_Entry()=default;
     void init_dir(uint32_t i,const char* n); // 初始化目录
     [[nodiscard]] uint32_t get_inode() const; // 获取inode
     [[nodiscard]] char* get_name(); // 获取名字
@@ -136,7 +142,8 @@ struct Data_Block {
 private:
     char block[BLOCK_SIZE]{};
 public:
-    Data_Block() =default;
+    Data_Block(const json& j,int pos );
+    Data_Block();
     void add_dir(uint32_t target_inode,const char* target_name); // 为目录块写入目录,当inode=0的时候，才可以写入
     bool is_full_of_directory(); //判断当前block是否已经填满目录
     bool is_full_of_index(); //判断当前block是否已经填满index

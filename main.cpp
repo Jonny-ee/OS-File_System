@@ -15,7 +15,10 @@ int main()
     std::cout<<"3. mkdir--用于在创建目录"<<std::endl;
     std::cout<<"4. rm--用于删除目录或文件"<<std::endl;
     std::cout<<"5. cat--用于查看文件内容"<<std::endl;
-    std::cout<<"6. vi--用于创建新文件或修改文件内容"<<std::endl<<std::endl;
+    std::cout<<"6. vi--用于创建新文件或修改文件内容"<<std::endl;
+    std::cout<<"7. reset--用于格式化该系统"<<std::endl<<std::endl<<std::endl;
+    std::cout<<"提示：本系统会在用户主目录下查找filesystem.json文件进行初始化。如果文件不存在或损坏，将使用默认配置初始化系统。"<<std::endl;
+    std::cout<<"系统退出时会自动将当前状态保存到用户主目录下的filesystem.json文件中。"<<std::endl<<std::endl<<std::endl;
     std::cout<<"现在你可以点击任意按键开始该系统"<<std::endl;
     getchar();
     system("clear");

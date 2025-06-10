@@ -7,14 +7,15 @@
 
 class File_Manager {
 private:
-    Super_Block sb; // 超级块
-    Bitmap block_bitmap; // 256位的数据块位图
-    Bitmap inode_bitmap; // 256位的inode位图
-    Inode inode_table[NUM_INODES]{}; // 256个inode节点（简化逻辑）
-    Data_Block data_blocks[NUM_BLOCKS]{}; // 256个数据块表
+    std::unique_ptr<Super_Block> sb; // 超级块
+    std::unique_ptr<Bitmap> block_bitmap; // 256位的数据块位图
+    std::unique_ptr<Bitmap> inode_bitmap; // 256位的inode位图
+    std::unique_ptr<Inode> inode_table[NUM_INODES]; // 256个inode节点（简化逻辑）
+    std::unique_ptr<Data_Block> data_blocks[NUM_BLOCKS]; // 256个数据块表
 public:
     json save_data();
-    File_Manager();// 格式化文件管理系统
+    File_Manager()=default;// 格式化文件管理系统
+    void load_data(const json& j,bool file_exsist);
     void init_file_manager();
     // 创建文件夹，先为文件夹分配inode，再分配一个空闲块初始化为目录项，将空闲块与新文件夹的inode绑定，将新文件写入父文件夹的目录项中
     uint32_t create_new(uint32_t parent_inode,u_int32_t u,const char* n,bool type);

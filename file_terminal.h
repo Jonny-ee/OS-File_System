@@ -10,20 +10,16 @@ private:
     File_Manager fm;
     std::vector<std::string> path_name;//存储路径
     std::vector<uint32_t> path_inode;
+    void save_to_file();
+    void load_from_file();
 public:
-    File_Terminal() {
-        inode=ROOT; // 默认初始所在位置是ROOT文件夹
-        path_name.emplace_back("\\");
-        path_inode.emplace_back(ROOT);
-        command();
-    }
+    File_Terminal();
     void command(); //终端
     void cd(const std::string& name); // 改变当前路径
     void cat(const std::string& name); // 查看文件内容
     void vi(const std::string& name); // 查看创建文件
     void mkdir(const std::string& name); // 创建文件夹
     uint32_t write_to_file(uint32_t new_file,const std::string& text);
-    void save_to_file();
 };
 
 
