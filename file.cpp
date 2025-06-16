@@ -30,8 +30,17 @@ bool Super_Block::use_data_block() {
     free_data_block.fetch_sub(1);
     return true;
 }
+bool Super_Block::use_inode_table() {
+    if (free_inode == 0)
+        return false;
+    free_inode.fetch_sub(1);
+    return true;
+}
 void Super_Block::release_data_block() {
     free_data_block.fetch_add(1);
+}
+void Super_Block::release_inode_table() {
+    free_inode.fetch_add(1);
 }
 int Super_Block::get_free_data_block() const {
     return free_data_block.load();

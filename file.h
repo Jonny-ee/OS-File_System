@@ -48,35 +48,37 @@ constexpr uint16_t PERM_OTH_EXEC    = 0x0001; // 其他执行
 //超级块，占20B
 struct Super_Block {
 private:
-    int num_inode_table;
-    int num_block;
-    std::atomic<int>  free_inode;
-    std::atomic<int>  free_data_block;
-    int inode_table_size;
-    int data_block_size;
+    int num_inode_table; // 总inode数量
+    int num_block; // 总数据块数量
+    std::atomic<int>  free_inode; // 目前可用的inode数量
+    std::atomic<int>  free_data_block; // 目前可用的数据块数量
+    int inode_table_size; // inode大小
+    int data_block_size; // 数据块大小
 public:
-    explicit Super_Block(const json &j);
-    Super_Block();
-    void init_sb();
-    int get_free_inode() const;
-    int get_free_data_block() const;
-    bool use_data_block();// 占用数据块，如果没有可用的数据块则返回false
+    explicit Super_Block(const json &j); // 有本地文件构造方法
+    Super_Block(); // 无参构造
+    void init_sb(); // 如果有本地文件，则按照文件初始化
+    int get_free_inode() const; // 获得目前可用的inode数量
+    int get_free_data_block() const; // 获得目前可用的数据块数量
+    bool use_data_block(); // 占用数据块，如果没有可用的数据块则返回false
+    bool use_inode_table(); // 占用inode号，如果没有可用的数据块则返回false
     void release_data_block(); // 释放数据块
-    json save_super_block();
+    void release_inode_table(); // 释放inode号
+    json save_super_block(); // 保存超级块的信息
 };
 
 // 数据块和inode号正好都是256个，使用同一个类，占32B
 struct Bitmap {
 private:
-    std::bitset<NUM_BLOCKS> bit_map;
+    std::bitset<NUM_BLOCKS> bit_map; // 256位的比特集合
 public:
-    explicit Bitmap(const json &j,const std::string& n);
-    explicit Bitmap();
-    bool use_bitmap(int i_id);// 将目标数据块置为1，如果已经是1则报错
+    explicit Bitmap(const json &j,const std::string& n); // 有本地文件构造方法
+    explicit Bitmap(); // 无参构造
+    bool use_bitmap(int i_id); // 将目标bit置为1，如果已经是1则报错
     void release_bitmap(uint32_t i_id);// 释放该数据块
     [[nodiscard]] int find_free_bit() const;    //从2号开始遍历，找到空的序号，0和1为保留号和root
-    [[nodiscard]] std::string save_bitmap() const;
-    void reset_bitmap();
+    void reset_bitmap(); // 重置bitmap
+    [[nodiscard]] std::string save_bitmap() const; // 保存bitmap信息
 };
 static_assert(sizeof(Bitmap) == 32, "Bitmap size mismatch!");
 
@@ -84,19 +86,18 @@ static_assert(sizeof(Bitmap) == 32, "Bitmap size mismatch!");
 // 定义inode 固定占128B
 struct Inode {
 private:
-    uint16_t mode;          // 文件类型 & 权限 高4位为文件
-    uint32_t size;          // 文件字节数
-    uint32_t uid;           // 所有者用户 ID
-    uint64_t create_time;   // 创建时间
+    uint16_t mode;                             // 文件类型 & 权限 高4位为文件
+    uint32_t size;                             // 文件字节数
+    uint32_t uid;                              // 所有者用户 ID
+    uint64_t create_time;                      // 创建时间
     uint64_t modification_time;                // 最后一次修改时间
     std::array<int,12> direct_ptrs{};          // 直接指针（最多12个）
     uint32_t indirect_ptr;                     // 一级间接指针
     uint32_t double_indirect_ptr;              // 二级间接指针
-    uint64_t padding[5]{};                     // 占位，未来拓展，放弃三级间接指针
-
+    uint64_t padding[5]{};                     // 占位，未来拓展
 public:
-    explicit Inode(const json& j);
-    explicit Inode();
+    explicit Inode(const json& j); // 有参构造
+    explicit Inode(); // 无参构造
     void initial_inode(u_int32_t u,bool is_file); // 创建文件时，只用所有者id，并且自动获得当前时间和默认文件权限
     [[nodiscard]] std::string get_time(const std::string& type) const;// 返回年月日时分秒的string，格式为 "2014-12-01 14:12:60"，可以选择创建时间或者修改时间
     [[nodiscard]] uint64_t get_create_time() const; // 获取创建时的时间，用于排序
@@ -112,10 +113,10 @@ public:
     [[nodiscard]] uint32_t get_double_indirect_ptr() const;// 获得二级直接指针指向的index表
     [[nodiscard]] bool get_type() const; // 获取该文件的类型
     [[nodiscard]] bool get_uid() const; //获取该文件的uid
-    [[nodiscard]] uint16_t get_mode() const;
-    [[nodiscard]] std::string get_mode(bool be_string) const;
-    void reset_ptr(int ptr_type,int pos=0);
-    void reset_inode();
+    [[nodiscard]] uint16_t get_mode() const; // 返回文件权限-2字节整数
+    [[nodiscard]] std::string get_mode(bool be_string) const; // 返回文件权限-string
+    void reset_ptr(int ptr_type,int pos=0); // 更改指针
+    void reset_inode(); // 重置inode
     json save_inode(); //保存inode节点，返回json文件
 };
 static_assert(sizeof(Inode) == INODE_SIZE, "Inode size mismatch!");
@@ -142,15 +143,15 @@ struct Data_Block {
 private:
     char block[BLOCK_SIZE]{};
 public:
-    Data_Block(const json& j,int pos );
-    Data_Block();
-    void add_dir(uint32_t target_inode,const char* target_name); // 为目录块写入目录,当inode=0的时候，才可以写入
-    bool is_full_of_directory(); //判断当前block是否已经填满目录
-    bool is_full_of_index(); //判断当前block是否已经填满index
-    bool is_empty_of_directory(); //判断当前目录block是否为空
+    Data_Block(const json& j,int pos ); // 有参构造
+    Data_Block(); //无参构造
+    void add_dir(uint32_t target_inode,const char* target_name); // 为目录块写入目录,当inode！=0的时候，才可以写入
+    bool is_full_of_directory(); // 判断当前block是否已经填满目录
+    bool is_full_of_index(); // 判断当前block是否已经填满index
+    bool is_empty_of_directory(); // 判断当前目录block是否为空
     bool is_empty_of_index(); // 判断当前index块是否为空
     void add_index(uint32_t target_index); // 为索引块添加索引，当指针为0的时候，才可以写入
-    uint32_t get_ptr_of_index(int num); //从index表中通过位置获取指针
+    uint32_t get_ptr_of_index(int num); // 从index表中通过位置获取指针
     uint32_t get_inode(const char* target_name); // 如果数据块为目录块，则提供名字查inode的服务
     uint32_t get_inode(uint32_t pos); // 或者通过位置来获取inode
     void delete_file(uint32_t pos); //删除指定位置的文件
@@ -160,8 +161,8 @@ public:
     void reset_block(); // 初始化该数据块
     bool has_name(const char* target_name);// 判断是否已经有同名文件
     [[nodiscard]] std::vector<std::string> list_entries(); // 用于ls操作
-    char* get_block();
-    std::string save_data_block();
+    char* get_block(); // 读取该数据块
+    std::string save_data_block(); // 保存数据块内的信息
 };
 static_assert(sizeof(Data_Block) == 4096, "Data_Block size mismatch!");
 

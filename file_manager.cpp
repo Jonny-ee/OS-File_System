@@ -40,8 +40,10 @@ void File_Manager::init_file_manager() {
     sb->init_sb();
 
     inode_bitmap->use_bitmap(ROOT);// 初始时将0号和1号置为占用，0号inode为root
+    sb->use_inode_table();
     inode_table[ROOT]->initial_inode(ROOT,IS_DIRECTORY); // 创建root的inode，0号用户为管理员，false表示为文件夹
     block_bitmap->use_bitmap(ROOT); // 将0号数据块给root使用
+    sb->use_data_block();
     data_blocks[ROOT]->init_directory_block(); //将0号数据块初始化成目录项
     inode_table[ROOT]->update_direct_ptr(ROOT); // 将0号数据块与0号inode绑定
     create_new(ROOT,ROOT,"usr",IS_DIRECTORY); // 创建初始的系统文件夹 usr
@@ -54,6 +56,7 @@ uint32_t File_Manager::create_new(uint32_t parent_inode,u_int32_t u,const char* 
     if(inode==-1)
         return parent_inode;
     inode_bitmap->use_bitmap(inode);
+    sb->use_inode_table();
     //初始化文件夹的inode节点
     inode_table[inode]->initial_inode(u,type);
     // 分配block，并且初始化
@@ -61,6 +64,7 @@ uint32_t File_Manager::create_new(uint32_t parent_inode,u_int32_t u,const char* 
     if(block==-1)
         return parent_inode;
     block_bitmap->use_bitmap(block);// 分配block
+    sb->use_data_block();
     if(type==IS_DIRECTORY)
         data_blocks[block]->init_directory_block(); // 将该block设置为目录项block,如果不是文件夹就不用初始化
 
@@ -74,6 +78,7 @@ uint32_t File_Manager::create_new(uint32_t parent_inode,u_int32_t u,const char* 
         if(blk_id==0) {
             block = block_bitmap->find_free_bit();
             block_bitmap->use_bitmap(block);// 分配block
+            sb->use_data_block();
             data_blocks[block]->init_directory_block(); // 将该block设置为目录项block
             inode_table[parent_inode]->update_direct_ptr(block); // 将该block与父文件夹的直接指针绑定
             data_blocks[block]->add_dir(inode,n); // 将新文件添加进新的block中
@@ -91,6 +96,7 @@ uint32_t File_Manager::create_new(uint32_t parent_inode,u_int32_t u,const char* 
     if(inode_table[parent_inode]->get_indirect_ptr()==0) {
         block = block_bitmap->find_free_bit();
         block_bitmap->use_bitmap(block);// 分配block
+        sb->use_data_block();
         data_blocks[block]->init_index_block(); // 将该block设置为index块
         inode_table[parent_inode]->update_indirect_ptr(block);// 将该block与父文件夹的一级间接指针绑定
     }
@@ -102,6 +108,7 @@ uint32_t File_Manager::create_new(uint32_t parent_inode,u_int32_t u,const char* 
         if(blk_id==0) {
             block = block_bitmap->find_free_bit();
             block_bitmap->use_bitmap(block);// 分配block
+            sb->use_data_block();
             data_blocks[block]->init_directory_block(); // 将该block设置为目录项block
             data_blocks[index_id]->add_index(block); // 将该block与index表的绑定
             data_blocks[block]->add_dir(inode,n); // 将新文件添加进新的block中
@@ -119,6 +126,7 @@ uint32_t File_Manager::create_new(uint32_t parent_inode,u_int32_t u,const char* 
     if(inode_table[parent_inode]->get_double_indirect_ptr()==0) {
         block = block_bitmap->find_free_bit();
         block_bitmap->use_bitmap(block);// 分配block
+        sb->use_data_block();
         data_blocks[block]->init_index_block(); // 将该block设置为index块
         inode_table[parent_inode]->update_double_indirect_ptr(block);// 将该block与父文件夹的二级间接指针绑定
     }
@@ -129,6 +137,7 @@ uint32_t File_Manager::create_new(uint32_t parent_inode,u_int32_t u,const char* 
         if(second_index_id==0) {
             block = block_bitmap->find_free_bit();
             block_bitmap->use_bitmap(block);// 分配block
+            sb->use_data_block();
             data_blocks[block]->init_index_block(); // 将该block设置为index块
             data_blocks[first_index_id]->add_index(block); //将新的block与二级间接指针指向的index绑定
             second_index_id =block; //更新second_index_id
@@ -138,6 +147,7 @@ uint32_t File_Manager::create_new(uint32_t parent_inode,u_int32_t u,const char* 
             if(blk_id==0) {
                 block = block_bitmap->find_free_bit();
                 block_bitmap->use_bitmap(block);
+                sb->use_data_block();
                 data_blocks[block]->init_directory_block();
                 data_blocks[second_index_id]->add_index(block);
                 data_blocks[block]->add_dir(inode,n); // 将新文件添加进新的block中
@@ -161,6 +171,7 @@ void File_Manager::free_blocks(uint32_t inode_id) {
         if (blk) {
             data_blocks[blk]->reset_block();       // 重置该块
             block_bitmap->release_bitmap(blk);
+            sb->release_data_block();
             inode_table[inode_id]->reset_ptr(0,i);
         }
     }
@@ -173,10 +184,12 @@ void File_Manager::free_blocks(uint32_t inode_id) {
             if (blk) {
                 data_blocks[blk]->reset_block();       // 重置该块
                 block_bitmap->release_bitmap(blk);
+                sb->release_data_block();
             }
         }
         data_blocks[ind]->reset_block();       // 重置该块
         block_bitmap->release_bitmap(ind);
+        sb->release_data_block();
     }
     inode_table[inode_id]->reset_ptr(1);
     // 二级间接指针
@@ -190,14 +203,17 @@ void File_Manager::free_blocks(uint32_t inode_id) {
                     if (blk) {
                         data_blocks[blk]->reset_block();       // 重置该块
                         block_bitmap->release_bitmap(blk);
+                        sb->release_data_block();
                     }
                 }
                 data_blocks[ind2]->reset_block();       // 重置该块
                 block_bitmap->release_bitmap(ind2);
+                sb->release_data_block();
             }
         }
         data_blocks[doub]->reset_block();       // 重置该块
         block_bitmap->release_bitmap(doub);
+        sb->release_data_block();
     }
     inode_table[inode_id]->reset_ptr(2);
 }
@@ -218,6 +234,7 @@ void File_Manager::fm_delete(uint32_t parent_inode, const char* n) {
                     fm_delete(inode, "");           // 递归删除
                 free_blocks(inode);                // 释放块
                 inode_bitmap->release_bitmap(inode);      // 释放 inode
+                sb->release_inode_table();
                 data_blocks[blk_id]->delete_file(j);      // 删除目录项
                 --j;  // 防止跳过
             }
@@ -225,6 +242,7 @@ void File_Manager::fm_delete(uint32_t parent_inode, const char* n) {
         if(data_blocks[blk_id]->is_empty_of_directory()) {
             data_blocks[blk_id]->reset_block();       // 重置该块
             block_bitmap->release_bitmap(blk_id); // 释放空目录块
+            sb->release_data_block();
         }
     };
 
@@ -467,7 +485,7 @@ uint32_t File_Manager::write_file(uint32_t inode_id,const std::string& content) 
             return 0;
         }
         block_bitmap->use_bitmap(block);
-
+        sb->use_data_block();
         // 计算当前块要写入的内容
         size_t block_size = std::min((size_t)BLOCK_SIZE, content_size - content_pos);
         std::string block_content = content.substr(content_pos, block_size);
@@ -488,6 +506,7 @@ uint32_t File_Manager::write_file(uint32_t inode_id,const std::string& content) 
                     return 0;
                 }
                 block_bitmap->use_bitmap(index_block);
+                sb->use_data_block();
                 data_blocks[index_block]->init_index_block();
                 inode_table[inode_id]->update_indirect_ptr(index_block);
             }
@@ -503,6 +522,7 @@ uint32_t File_Manager::write_file(uint32_t inode_id,const std::string& content) 
                     return 0;
                 }
                 block_bitmap->use_bitmap(index_block);
+                sb->use_data_block();
                 data_blocks[index_block]->init_index_block();
                 inode_table[inode_id]->update_double_indirect_ptr(index_block);
             }
@@ -519,6 +539,7 @@ uint32_t File_Manager::write_file(uint32_t inode_id,const std::string& content) 
                     return 0;
                 }
                 block_bitmap->use_bitmap(new_index_block);
+                sb->use_data_block();
                 data_blocks[new_index_block]->init_index_block();
                 data_blocks[inode_table[inode_id]->get_double_indirect_ptr()]->add_index(new_index_block);
             }
